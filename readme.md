@@ -15,4 +15,10 @@ https://github.com/espressif
 Please follow the setup instructions laid out in this video to install the toolchain
 https://www.youtube.com/watch?v=XDDcS7HQNlI
 
+
+### Build Instructions
+Open VSCode int the flow_firmware directory 
+* Open the command palette (Ctrl + Shift + P) 
+   * Select ESP-IDF: Build Your Project
+   * Run ESD-IDF: Flash (UART) Your Project
     
