@@ -1,1 +1,2 @@
-FLOW-FW/.vscode/settings.json
+flow_firmware/.vscode/**
+flow_firmware/build
