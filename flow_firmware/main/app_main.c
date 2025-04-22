@@ -25,6 +25,20 @@
 #include "services/gap/ble_svc_gap.h"
 #include "ble_sensor.h"
 
+/* Device I/O */ 
+#include "driver/spi_master.h"
+#include "driver/gpio.h"
+
+/* External Sensors */ 
+#include "AS6031_Bit_Definition.h"
+#include "AS6031_CFG_Macros.h"
+#include "AS6031_Coding.h"
+
+#define SPI_MISO 9
+#define SPI_MOSI 10
+#define SPI_SCLK 8
+#define SPI_SSN 7
+#define INTN 6
 
 void initializeDevice(){
 
@@ -298,11 +312,94 @@ void blehr_host_task(void *param)
 
     nimble_port_freertos_deinit();
 }
-
-extern "C" void app_main(void)
+uint32_t Read_Dword(spi_device_handle_t handle, uint8_t rd_opcode, uint8_t address)
 {
-    initializeDevice();
+  /* Timeout duration in millisecond [ms] */
+  //uint8_t timeout = 10;
+  uint8_t spiTX[2] = {0};
+  uint8_t spiRX[4] = {0};
+  uint32_t temp_u32 = 0;
+  
+  spiTX[0] = rd_opcode;
+  spiTX[1] = address;
+  
+    spi_transaction_t t = {
+        .length = 4,
+        .rx_buffer = spiRX,
+        .tx_buffer = spiTX,
+    };
 
+  /* 1. Put SSN low - Activate */
+  gpio_set_level(SPI_SSN, 0);
+  
+  /* 2. Transmit register address */
+    spi_device_polling_transmit(handle, &t);
+
+
+  
+  /*3. Read four bytes */
+    //HAL_SPI_Receive(&hspi1, spiRX, 4, timeout);
+  
+  /* 4. Put SSN high - Deactivate */
+  gpio_set_level(SPI_SSN, 1);
+  
+  /*Concatenate of bytes (from MSB to LSB) */
+  temp_u32 = (spiRX[0]<<24) + (spiRX[1]<<16) + (spiRX[2]<<8) + (spiRX[3]);
+  
+  return temp_u32;
+}
+
+void spi_init(){
+    int ret;
+
+    spi_device_handle_t handle;
+
+    gpio_set_direction(SPI_SSN, GPIO_MODE_OUTPUT);                   // Setting the CS' pin to work in OUTPUT mode
+
+    spi_bus_config_t buscfg = {                                         // Provide details to the SPI_bus_sturcture of pins and maximum data size
+        .miso_io_num = SPI_MISO,
+        .mosi_io_num = SPI_MOSI,
+        .sclk_io_num = SPI_SCLK,
+    };
+
+    spi_device_interface_config_t devcfg = {
+        // configure device_structure
+        .clock_speed_hz = 12 * 1000 * 1000,                             // Clock out at 12 MHz
+        .mode = 0,                                                      // SPI mode 0: CPOL:-0 and CPHA:-0
+        .spics_io_num = SPI_SSN,                                     // This field is used to specify the GPIO pin that is to be used as CS'
+        .queue_size = 1,                                                // We want to be able to queue 7 transactions at a time
+    };
+
+    ret = spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO);       // Initialize the SPI bus
+    ESP_ERROR_CHECK(ret);
+
+    ret = spi_bus_add_device(SPI2_HOST, &devcfg, &handle);                  // Attach the Slave device to the SPI bus
+    ESP_ERROR_CHECK(ret);
+
+    char sendbuf[128] = {0};
+    char recvbuf[128] = {0};
+
+    spi_transaction_t t = {
+        .length = 4
+    };
+    memset(&t, 0, sizeof(t));
+
+    spi_device_acquire_bus(handle, 1000);
+    // ESP_LOG_INFO('Acquired SPI bus!');
+    float RAW_Result = 0;
+    while (1)
+    {
+        RAW_Result = Read_Dword(handle, RC_RAA_RD, 0x88);
+        // ESP_LOGI("Flow Sensor", "%d", t.rx_data);
+
+        printf("Data=%.2f\n", RAW_Result);
+        fflush(stdout);
+        vTaskDelay(100);
+    }
+    
+}
+
+void start_ble_task(){
     int rc;
 
     /* Initialize NVS — it is used to store PHY calibration data */
@@ -335,6 +432,14 @@ extern "C" void app_main(void)
 
     /* Start the task */
     nimble_port_freertos_init(blehr_host_task);
+}
+
+void app_main(void)
+{
+    initializeDevice();
+
+    // start_ble_task();
+    spi_init();
 
 
 }
