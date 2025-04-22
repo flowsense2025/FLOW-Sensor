@@ -10,6 +10,10 @@ We will use the Espressif SDK alongside the VSCode extension
 
 https://github.com/espressif
 
+### Third-Party Device Drivers
+https://github.com/sciosense/as6031-sample-code/tree/main
+
+
 ### Setup Instructions
 
 Please follow the setup instructions laid out in this video to install the toolchain
