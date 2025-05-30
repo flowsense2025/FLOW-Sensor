@@ -13,9 +13,17 @@
 #include "esp_flash.h"
 #include "esp_system.h"
 
+
+/* Peripherals */
+#include "driver/gpio.h"
+#include "driver/pulse_cnt.h"
+
+
+/* OS */
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOSConfig.h"
+
 /* BLE */
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
@@ -299,8 +307,7 @@ void blehr_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
-extern "C" void app_main(void)
-{
+void init(){
     initializeDevice();
 
     int rc;
@@ -338,3 +345,42 @@ extern "C" void app_main(void)
 
 
 }
+#define GPIO_INPUT_IO gpio_num_t::GPIO_NUM_21
+#define GPIO_INPUT_PIN_SEL (1ULL << GPIO_INPUT_IO)
+
+static const char *TAG = "GPIO_INTERRUPT";
+
+static void IRAM_ATTR gpio_isr_handler(void* arg)
+{
+    uint32_t gpio_num = (uint32_t) arg;
+    static int count = 0;
+    // Just print from ISR (normally keep ISR short)
+    ets_printf("GPIO[%d] interrupt triggered: %d\n", gpio_num, count);
+    count++;
+}
+
+extern "C" void app_main(void)
+{
+    // Configure GPIO as input
+    gpio_config_t io_conf = {
+        .pin_bit_mask = GPIO_INPUT_PIN_SEL,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_NEGEDGE, // interrupt on falling edge, change as needed
+    };
+    gpio_config(&io_conf);
+
+    // Install GPIO ISR service
+    gpio_install_isr_service(0);
+
+    // Attach ISR handler for specific pin
+    gpio_isr_handler_add(GPIO_INPUT_IO, gpio_isr_handler, (void*) GPIO_INPUT_IO);
+
+    ESP_LOGI(TAG, "Interrupt on GPIO %d configured", GPIO_INPUT_IO);
+
+    while (1) {
+        vTaskDelay(pdMS_TO_TICKS(1000)); // main task delay
+    }
+}
+
