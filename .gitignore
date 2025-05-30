@@ -1,2 +1,3 @@
 flow_firmware/.vscode/**
 flow_firmware/build
+.vscode/settings.json
