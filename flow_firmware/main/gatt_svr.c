@@ -26,8 +26,8 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include "ble_sensor.h"
 
-static const char *manuf_name = "Apache Mynewt ESP32 devkitC";
-static const char *model_num = "Mynewt HR Sensor demo";
+static const char *manuf_name = "Version 0.1";
+static const char *model_num = "FlowSensor";
 uint16_t hrs_hrm_handle;
 
 static int

@@ -772,7 +772,7 @@ void AS6031_Update_CFG(AS6031_InitTypeDef* init)  {
 void AS6031_Init_CFG(AS6031_InitTypeDef* init, __AS6031_CFG_Declaration* array)  {
 	uint8_t idx;
 	/* Update content of CR for external usage */
-	for (idx = 0; idx <= __AS6031_CFG_Array_Size; idx++) {
+	for (idx = 0; idx < __AS6031_CFG_Array_Size; idx++) {
 		init->CR[idx] = array[idx];
 	}
 
