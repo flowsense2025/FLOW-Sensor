@@ -409,7 +409,7 @@ extern "C" void app_main(void)
     init();
     gpio_init();
 
-    static uint16_t frm[2];
+    static uint8_t frm[2];
     int rc;
     struct os_mbuf *om;
 
