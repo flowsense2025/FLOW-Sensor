@@ -13,9 +13,17 @@
 #include "esp_flash.h"
 #include "esp_system.h"
 
+
+/* Peripherals */
+#include "driver/gpio.h"
+#include "driver/pulse_cnt.h"
+
+
+/* OS */
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "freertos/FreeRTOSConfig.h"
+
 /* BLE */
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
@@ -55,10 +63,10 @@ void initializeDevice(){
 
     printf("Minimum free heap size: %" PRIu32 " bytes\n", esp_get_minimum_free_heap_size());
 
-    for (int i = 10; i >= 0; i--) {
-        printf("Restarting in %d seconds...\n", i);
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-    }
+    // for (int i = 10; i >= 0; i--) {
+    //     printf("Restarting in %d seconds...\n", i);
+    //     vTaskDelay(1000 / portTICK_PERIOD_MS);
+    // }
     fflush(stdout);
 }
 
@@ -79,6 +87,7 @@ static uint8_t blehr_addr_type;
 
 /* Variable to simulate heart beats */
 static uint8_t heartrate = 90;
+static QueueHandle_t flow_queue;
 
 /**
  * Utility function to log an array of bytes.
@@ -161,22 +170,22 @@ blehr_advertise(void)
 static void
 blehr_tx_hrate_stop(void)
 {
-    xTimerStop( blehr_tx_timer, 1000 / portTICK_PERIOD_MS );
+    //xTimerStop( blehr_tx_timer, 1000 / portTICK_PERIOD_MS );
 }
 
 /* Reset heart rate measurement */
 static void
 blehr_tx_hrate_reset(void)
 {
-    int rc;
+    // int rc;
 
-    if (xTimerReset(blehr_tx_timer, 1000 / portTICK_PERIOD_MS ) == pdPASS) {
-        rc = 0;
-    } else {
-        rc = 1;
-    }
+    // if (xTimerReset(blehr_tx_timer, 1000 / portTICK_PERIOD_MS ) == pdPASS) {
+    //     rc = 0;
+    // } else {
+    //     rc = 1;
+    // }
 
-    assert(rc == 0);
+    // assert(rc == 0);
 
 }
 
@@ -184,29 +193,31 @@ blehr_tx_hrate_reset(void)
 static void
 blehr_tx_hrate(TimerHandle_t ev)
 {
-    static uint8_t hrm[2];
-    int rc;
-    struct os_mbuf *om;
+    // static uint8_t hrm[2];
+    // int rc;
+    // struct os_mbuf *om;
 
-    if (!notify_state) {
-        blehr_tx_hrate_stop();
-        heartrate = 90;
-        return;
-    }
+    // if (!notify_state) {
+    //     blehr_tx_hrate_stop();
+    //     heartrate = 90;
+    //     return;
+    // }
 
-    hrm[0] = 0x06; /* contact of a sensor */
-    hrm[1] = heartrate; /* storing dummy data */
+    // hrm[0] = 0x06; /* contact of a sensor */
+    // hrm[1] = heartrate; /* storing dummy data */
 
-    /* Simulation of heart beats */
-    heartrate++;
-    if (heartrate == 160) {
-        heartrate = 90;
-    }
+    // /* Simulation of heart beats */
+    // static uint8_t dummy;
+    // if (xQueueReceive(flow_queue, &dummy, NULL);
+    // heartrate++;
+    // if (heartrate == 160) {
+    //     heartrate = 90;
+    // }
 
-    om = ble_hs_mbuf_from_flat(hrm, sizeof(hrm));
-    rc = ble_gatts_notify_custom(conn_handle, hrs_hrm_handle, om);
+    // om = ble_hs_mbuf_from_flat(hrm, sizeof(hrm));
+    // rc = ble_gatts_notify_custom(conn_handle, hrs_hrm_handle, om);
 
-    assert(rc == 0);
+    // assert(rc == 0);
 
     blehr_tx_hrate_reset();
 }
@@ -299,8 +310,7 @@ void blehr_host_task(void *param)
     nimble_port_freertos_deinit();
 }
 
-extern "C" void app_main(void)
-{
+void init(){
     initializeDevice();
 
     int rc;
@@ -323,9 +333,6 @@ extern "C" void app_main(void)
     ble_hs_cfg.sync_cb = blehr_on_sync;
     ble_hs_cfg.reset_cb = blehr_on_reset;
 
-    /* name, period/time,  auto reload, timer ID, callback */
-    blehr_tx_timer = xTimerCreate("blehr_tx_timer", pdMS_TO_TICKS(1000), pdTRUE, (void *)0, blehr_tx_hrate);
-
     rc = gatt_svr_init();
     assert(rc == 0);
 
@@ -336,5 +343,126 @@ extern "C" void app_main(void)
     /* Start the task */
     nimble_port_freertos_init(blehr_host_task);
 
+    flow_queue = xQueueCreate(128, sizeof(uint8_t));
+}
+
+#define GPIO_INPUT_IO gpio_num_t::GPIO_NUM_21
+#define GPIO_INPUT_PIN_SEL (1ULL << GPIO_INPUT_IO)
+
+static const char *INTERRUPT_TAG = "GPIO_INTERRUPT";
+static const char *MEASUREMENT_TAG = "FLOW_MEASUREMENT";
+
+static void IRAM_ATTR gpio_isr_handler(void* arg)
+{
+    uint32_t gpio_num = (uint32_t) arg;
+    static const uint8_t count = 1;
+    // Just print from ISR (normally keep ISR short)
+    ets_printf("GPIO[%d] interrupt triggered: %d\n", gpio_num, count);
+    xQueueSendFromISR(flow_queue, &count, NULL);
+}
+
+void gpio_init(){
+    // Configure GPIO as input
+    gpio_config_t io_conf = {
+        .pin_bit_mask = GPIO_INPUT_PIN_SEL,
+        .mode = GPIO_MODE_INPUT,
+        .pull_up_en = GPIO_PULLUP_ENABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_POSEDGE, // interrupt on falling edge, change as needed
+    };
+    gpio_config(&io_conf);
+
+    // Install GPIO ISR service
+    gpio_install_isr_service(0);
+
+    // Attach ISR handler for specific pin
+    gpio_isr_handler_add(GPIO_INPUT_IO, gpio_isr_handler, (void*) GPIO_INPUT_IO);
+
+    ESP_LOGI(INTERRUPT_TAG, "Interrupt on GPIO %d configured", GPIO_INPUT_IO);
 
 }
+
+typedef struct{
+    uint16_t litre = 0;
+    uint16_t milliletre_remainder = 0; // represented out of 11 (11 pulses = 1 L)
+}WaterVolume_t;
+
+void increment_volume(WaterVolume_t* volume){
+
+    uint8_t new_litre = (volume->milliletre_remainder == 10);
+    if (new_litre){
+        volume->litre++;
+        volume->milliletre_remainder = 0;
+    }
+    else
+    {
+        volume->milliletre_remainder++;
+    }
+}
+
+float get_total_volume_litre(WaterVolume_t* volume){
+    return volume->litre + (float)volume->milliletre_remainder/11.0;
+}
+
+extern "C" void app_main(void)
+{
+    init();
+    gpio_init();
+
+    static uint8_t frm[2];
+    int rc;
+    struct os_mbuf *om;
+
+    frm[0] = 0x06; /* device ble id */
+    
+    WaterVolume_t total_volume = {0};
+
+    // #define DUMMY_DATA
+    while (1) {
+
+        
+        #ifdef DUMMY_DATA
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
+        #else
+        uint8_t data = 0;
+
+        if(xQueueReceive(flow_queue, &data, portMAX_DELAY) == pdFALSE){
+            // do smt...in 52 days
+        }
+
+        do{
+            increment_volume(&total_volume);
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }while(xQueueReceive(flow_queue, &data, 0) == pdTRUE);
+
+        ESP_LOGI(INTERRUPT_TAG, "GPIO interrupt received");
+
+
+        #endif 
+        // TODO: Should we store total count on device?
+        // TODO: May need an external SD card 
+
+        // 11 pulses per litre. 
+        // 1/11 L 
+
+        // we only need to send a BLE message if there is a difference in the data
+        if (!notify_state) {
+            continue;
+        }
+        else
+        {
+            uint16_t volumeML = 1000*get_total_volume_litre(&total_volume);
+            // precision of 90 mL
+            frm[1] = volumeML;
+            //local_count = 0; // "move" data to phone by resetting count
+            ESP_LOGI(MEASUREMENT_TAG, "%d", volumeML);
+                
+            om = ble_hs_mbuf_from_flat(frm, sizeof(frm));
+            rc = ble_gatts_notify_custom(conn_handle, hrs_hrm_handle, om);
+
+            assert(rc == 0);
+        }
+    }
+}
+
