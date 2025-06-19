@@ -12,7 +12,8 @@ https://github.com/espressif
 
 ### Setup Instructions
 
-Please follow the setup instructions laid out in this video to install the toolchain
+Please follow the setup instructions laid out in this video to install the toolchain (v5.4.0)
+
 https://www.youtube.com/watch?v=XDDcS7HQNlI
 
 
