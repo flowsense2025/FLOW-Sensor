@@ -349,7 +349,8 @@ void init(){
 #define GPIO_INPUT_IO gpio_num_t::GPIO_NUM_21
 #define GPIO_INPUT_PIN_SEL (1ULL << GPIO_INPUT_IO)
 
-static const char *TAG = "GPIO_INTERRUPT";
+static const char *INTERRUPT_TAG = "GPIO_INTERRUPT";
+static const char *MEASUREMENT_TAG = "FLOW_MEASUREMENT";
 
 static void IRAM_ATTR gpio_isr_handler(void* arg)
 {
@@ -377,7 +378,7 @@ void gpio_init(){
     // Attach ISR handler for specific pin
     gpio_isr_handler_add(GPIO_INPUT_IO, gpio_isr_handler, (void*) GPIO_INPUT_IO);
 
-    ESP_LOGI(TAG, "Interrupt on GPIO %d configured", GPIO_INPUT_IO);
+    ESP_LOGI(INTERRUPT_TAG, "Interrupt on GPIO %d configured", GPIO_INPUT_IO);
 
 }
 
@@ -399,7 +400,7 @@ void increment_volume(WaterVolume_t* volume){
     }
 }
 
-float get_total_volume(WaterVolume_t* volume){
+float get_total_volume_litre(WaterVolume_t* volume){
     return volume->litre + (float)volume->milliletre_remainder/11.0;
 }
 
@@ -408,7 +409,7 @@ extern "C" void app_main(void)
     init();
     gpio_init();
 
-    static uint32_t frm[2];
+    static uint16_t frm[2];
     int rc;
     struct os_mbuf *om;
 
@@ -435,7 +436,8 @@ extern "C" void app_main(void)
             vTaskDelay(pdMS_TO_TICKS(10));
         }while(xQueueReceive(flow_queue, &data, 0) == pdTRUE);
 
-        ESP_LOGI(TAG, "GPIO interrupt received");
+        ESP_LOGI(INTERRUPT_TAG, "GPIO interrupt received");
+
 
         #endif 
         // TODO: Should we store total count on device?
@@ -450,10 +452,11 @@ extern "C" void app_main(void)
         }
         else
         {
+            uint16_t volumeML = 1000*get_total_volume_litre(&total_volume);
             // precision of 90 mL
-            frm[1] = total_volume.litre; /* storing dummy data */
+            frm[1] = volumeML;
             //local_count = 0; // "move" data to phone by resetting count
-            ESP_LOGI(TAG, "%.2f", get_total_volume(&total_volume));
+            ESP_LOGI(MEASUREMENT_TAG, "%d", volumeML);
                 
             om = ble_hs_mbuf_from_flat(frm, sizeof(frm));
             rc = ble_gatts_notify_custom(conn_handle, hrs_hrm_handle, om);
